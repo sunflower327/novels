@@ -66,8 +66,13 @@ function save() {
     router.replace(`/writer/${book.value.id}`)
   }
 }
-function autosave() { save() }
-function saved(msg = '已保存') { save(); notify(msg) }
+// 防抖自动保存：输入时 800ms 内只写一次
+let saveTimer = null
+function autosave() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(save, 800)
+}
+function saved(msg = '已保存') { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null } save(); notify(msg) }
 
 function copy(text, label = '已复制') {
   navigator.clipboard?.writeText(text).then(() => notify(label)).catch(() => {})

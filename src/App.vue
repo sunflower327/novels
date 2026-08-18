@@ -1,7 +1,18 @@
 <script setup>
+import { ref, onMounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import { useToast } from './toast.js'
+import { getTheme, setTheme } from './store.js'
 const toast = useToast()
+const theme = ref('dark')
+onMounted(() => {
+  theme.value = getTheme()
+  setTheme(theme.value)
+})
+function toggleTheme() {
+  theme.value = theme.value === 'dark' ? 'light' : 'dark'
+  setTheme(theme.value)
+}
 </script>
 
 <template>
@@ -9,9 +20,12 @@ const toast = useToast()
     <header class="nav">
       <RouterLink to="/" class="brand">📖 网文创作与阅读</RouterLink>
       <nav>
-        <RouterLink to="/">书架</RouterLink>
-        <RouterLink to="/writer">创作</RouterLink>
-        <RouterLink to="/kb">知识库</RouterLink>
+        <RouterLink to="/" aria-label="书架">书架</RouterLink>
+        <RouterLink to="/writer" aria-label="创作">创作</RouterLink>
+        <RouterLink to="/kb" aria-label="知识库">知识库</RouterLink>
+        <button class="btn sm ghost" @click="toggleTheme" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'">
+          {{ theme === 'dark' ? '☀️' : '🌙' }}
+        </button>
       </nav>
     </header>
     <main class="main">
@@ -19,7 +33,7 @@ const toast = useToast()
     </main>
     <footer class="foot">基于 novel-trend-writing skill · 本地模板生成 · 数据存于浏览器</footer>
     <Transition name="toast">
-      <div v-if="toast.show" class="toast">{{ toast.msg }}</div>
+      <div v-if="toast.show" class="toast" role="status">{{ toast.msg }}</div>
     </Transition>
   </div>
 </template>

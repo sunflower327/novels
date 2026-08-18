@@ -57,6 +57,16 @@ export function newBook() {
   }
 }
 
+// 主题
+const THEME_KEY = 'novel-site:theme'
+export function getTheme() {
+  return localStorage.getItem(THEME_KEY) || 'dark'
+}
+export function setTheme(t) {
+  localStorage.setItem(THEME_KEY, t)
+  document.documentElement.setAttribute('data-theme', t)
+}
+
 // 导出全部数据为 JSON 字符串
 export function exportAll() {
   return JSON.stringify(loadBooks(), null, 2)

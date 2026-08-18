@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { marked } from 'marked'
 import skillMd from '../skills/SKILL.md?raw'
 import refMd from '../skills/reference.md?raw'
@@ -13,6 +13,40 @@ const tabs = [
 const active = ref('ref')
 const current = computed(() => tabs.find((t) => t.key === active.value))
 const html = computed(() => marked.parse(current.value.md))
+
+const container = ref(null)
+const toc = ref([])
+const keyword = ref('')
+
+function buildToc() {
+  nextTick(() => {
+    const hs = container.value?.querySelectorAll('h1, h2') || []
+    toc.value = [...hs].map((h, i) => ({ id: 'kb-h-' + i, level: h.tagName, text: h.textContent }))
+    hs.forEach((h, i) => (h.id = 'kb-h-' + i))
+  })
+}
+watch(active, buildToc, { immediate: true })
+onMounted(buildToc)
+
+function scrollTo(idx) {
+  const el = document.getElementById(toc.value[idx].id)
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function doSearch() {
+  const kw = keyword.value.trim()
+  if (!kw) return
+  const hs = container.value?.querySelectorAll('h1,h2,h3,li,p') || []
+  for (const h of hs) {
+    if (h.textContent.includes(kw)) {
+      h.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      h.style.transition = 'background .3s'
+      h.style.background = 'rgba(110,168,254,.25)'
+      setTimeout(() => (h.style.background = ''), 1200)
+      return
+    }
+  }
+}
 </script>
 
 <template>
@@ -23,12 +57,27 @@ const html = computed(() => marked.parse(current.value.md))
   <div class="steps">
     <div v-for="t in tabs" :key="t.key" :class="['s', t.key === active ? 'active' : '']" @click="active = t.key">{{ t.name }}</div>
   </div>
-  <div class="card kb">
-    <div class="kb-content" v-html="html"></div>
+
+  <div class="kb-layout">
+    <aside class="kb-side card">
+      <input v-model="keyword" @keydown.enter="doSearch" placeholder="搜索关键词（回车跳转）" style="margin-bottom:10px" />
+      <button class="btn sm primary" style="width:100%;margin-bottom:14px" @click="doSearch">跳转到匹配处</button>
+      <div class="muted" style="font-size:12px;margin-bottom:6px">目录</div>
+      <div v-for="(t, i) in toc" :key="i" class="toc-item" :style="t.level === 'H1' ? 'font-weight:600' : 'padding-left:14px'"
+           @click="scrollTo(i)">{{ t.text }}</div>
+    </aside>
+    <div class="card kb">
+      <div ref="container" class="kb-content" v-html="html"></div>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.kb-layout { display: grid; grid-template-columns: 220px 1fr; gap: 16px; }
+@media (max-width: 720px){ .kb-layout { grid-template-columns: 1fr; } }
+.kb-side { max-height: 72vh; overflow: auto; position: sticky; top: 70px; }
+.toc-item { font-size: 13px; padding: 5px 6px; border-radius: 6px; cursor: pointer; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toc-item:hover { background: var(--panel2); color: var(--text); }
 .kb { max-height: 72vh; overflow: auto; }
 .kb-content { font-size: 14px; line-height: 1.8; }
 .kb-content :deep(h1) { font-size: 22px; margin: 4px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }

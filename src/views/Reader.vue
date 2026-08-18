@@ -39,8 +39,8 @@ function smaller() { fontScale.value = Math.max(14, fontScale.value - 1) }
         </div>
       </div>
       <div class="row">
-        <button class="btn sm ghost" @click="smaller">A-</button>
-        <button class="btn sm ghost" @click="bigger">A+</button>
+        <button class="btn sm ghost" @click="smaller" aria-label="缩小字号">A-</button>
+        <button class="btn sm ghost" @click="bigger" aria-label="放大字号">A+</button>
         <button class="btn sm" @click="router.push(`/writer/${book.id}`)">去编辑</button>
         <button class="btn sm" @click="router.push('/')">书架</button>
       </div>
