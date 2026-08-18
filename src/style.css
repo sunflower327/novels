@@ -108,3 +108,21 @@ pre.out {
 }
 .reader-text { font-size: 17px; line-height: 2; }
 .reader-text p { margin: 0 0 1.2em; }
+
+/* AI 设置弹窗 */
+.modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
+.modal { background: var(--panel, #1a1e27); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 520px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.modal-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.modal-head h3 { margin: 0; font-size: 16px; }
+.modal-close { cursor: pointer; font-size: 18px; color: var(--muted); }
+.modal-body { padding: 16px 18px; overflow-y: auto; flex: 1; }
+.modal-body input, .modal-body select, .modal-body textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; margin-bottom: 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg, #0f1419); color: var(--text, #e7e9ee); font-family: inherit; font-size: 14px; }
+.modal-body input[type="checkbox"] { width: auto; margin-right: 6px; }
+.modal-body input[type="range"] { padding: 0; }
+.field-label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+.modal-tip { font-size: 13px; color: var(--muted); margin: 0 0 8px; line-height: 1.6; }
+.modal-hint { font-size: 13px; color: var(--bad, #e55); margin: 8px 0 0; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); }
+.providers-hint { margin-top: 12px; font-size: 12px; color: var(--muted); }
+.providers-hint summary { cursor: pointer; }
+.providers-hint ul { margin: 6px 0 0; padding-left: 18px; line-height: 1.7; }

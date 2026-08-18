@@ -8,6 +8,9 @@ import {
   genVolumeOutline, genChapterOutline, genCharacter, genRelationships,
   continueWriting, diagnoseAI, deAI, evalSubmission,
 } from '../lib/generators.js'
+import {
+  providers, loadSettings, saveSettings, isConfigured, smartGenerate,
+} from '../lib/ai.js'
 
 const props = defineProps({ id: String })
 const router = useRouter()
@@ -15,6 +18,32 @@ const book = ref(newBook())
 const step = ref(0)
 const persisted = ref(false)
 const steps = ['灵感', '书名', '简介', '总纲', '卷纲', '章纲', '角色', '关系', '续写', '去AI', '投稿']
+
+// AI 设置
+const ai = reactive(loadSettings())
+const showAiSettings = ref(false)
+const busy = ref('')
+function persistAi() { saveSettings(ai) }
+function onProviderChange() {
+  const p = providers.find(x => x.v === ai.provider)
+  if (p && p.baseURL && !ai.baseURL) ai.baseURL = p.baseURL
+  if (p && p.model && !ai.model) ai.model = p.model
+  persistAi()
+}
+function aiEnabled() { return ai.enabled && isConfigured(ai) }
+async function runAi(kind, label, ...args) {
+  busy.value = label
+  notify(`${label}生成中…`)
+  try {
+    const result = await smartGenerate(ai, kind, ...args)
+    return result
+  } catch (e) {
+    notify(`${label}失败：${e.message || e}`)
+    return null
+  } finally {
+    busy.value = ''
+  }
+}
 
 // 各步骤临时输入/输出
 const s = reactive({
@@ -79,63 +108,54 @@ function copy(text, label = '已复制') {
 }
 
 // 灵感
-function doInspiration() {
-  s.inspiration = genInspiration(s.idea, s.genre, s.platform)
-  saved('已生成灵感卡')
+async function doInspiration() {
+  const r = await runAi('inspiration', '灵感卡', s.idea, s.genre, s.platform)
+  if (r) { s.inspiration = r; saved('已生成灵感卡') }
 }
 // 书名
-function doTitles() {
-  s.titles = genTitles(s.idea, s.genre, s.platform)
-  notify('已生成书名备选')
+async function doTitles() {
+  const r = await runAi('titles', '书名', s.idea, s.genre, s.platform)
+  if (r) { s.titles = r; notify('已生成书名备选') }
 }
 function useTitle(t) {
   book.value.title = t.replace(/[《》]/g, '')
   saved('已采用书名')
 }
 // 简介
-function doSynopsis() {
-  s.synopsis = genSynopsis(book.value.title, s.genre, s.platform, s.idea)
-  book.value.synopsis = s.synopsis
-  saved('已生成简介')
+async function doSynopsis() {
+  const r = await runAi('synopsis', '简介', book.value.title, s.genre, s.platform, s.idea)
+  if (r) { s.synopsis = r; book.value.synopsis = r; saved('已生成简介') }
 }
 // 总纲
-function doOutline() {
-  s.outline = genOutline(s.genre, s.inspiration?.selling?.join('、'))
-  book.value.outline = { ...book.value.outline, main: s.outline }
-  saved('已生成总纲')
+async function doOutline() {
+  const r = await runAi('outline', '总纲', s.genre, s.inspiration?.selling?.join('、'))
+  if (r) { s.outline = r; book.value.outline = { ...book.value.outline, main: r }; saved('已生成总纲') }
 }
 // 卷纲
-function doVolumes() {
-  s.volumes = genVolumeOutline(s.genre, 3)
-  book.value.outline = { ...book.value.outline, volumes: s.volumes }
-  saved('已生成卷纲')
+async function doVolumes() {
+  const r = await runAi('volumes', '卷纲', s.genre, 3)
+  if (r) { s.volumes = r; book.value.outline = { ...book.value.outline, volumes: r }; saved('已生成卷纲') }
 }
 // 章纲
-function doChapters() {
-  s.chapters = genChapterOutline()
-  book.value.outline = { ...book.value.outline, chapters: s.chapters }
-  saved('已生成章纲')
+async function doChapters() {
+  const r = await runAi('chapters', '章纲')
+  if (r) { s.chapters = r; book.value.outline = { ...book.value.outline, chapters: r }; saved('已生成章纲') }
 }
 // 角色
-function addChar() {
-  const c = genCharacter(s.newName, s.newRole, s.genre)
-  c.id = uid()
-  s.chars.push(c)
-  book.value.characters = s.chars
-  saved('已添加角色')
-  s.newName = ''
+async function addChar() {
+  const r = await runAi('character', '角色卡', s.newName, s.newRole, s.genre)
+  if (r) { r.id = uid(); s.chars.push(r); book.value.characters = s.chars; saved('已添加角色'); s.newName = '' }
 }
 function delChar(i) { s.chars.splice(i, 1); saved('已删除角色') }
 // 关系
-function doRel() {
-  s.relText = genRelationships(s.chars)
-  book.value.relationships = s.relText
-  saved('已生成关系')
+async function doRel() {
+  const r = await runAi('relationships', '关系', s.chars)
+  if (r) { s.relText = r; book.value.relationships = r; saved('已生成关系') }
 }
 // 续写
-function doWrite() {
-  s.written = continueWriting(s.prevText, s.chapSummary)
-  notify('已生成续写草稿')
+async function doWrite() {
+  const r = await runAi('writing', '续写', s.prevText, s.chapSummary)
+  if (r) { s.written = r; notify('已生成续写草稿') }
 }
 function saveChapter() {
   if (!s.written.trim()) return
@@ -208,6 +228,9 @@ function goHome() { save(); router.push('/') }
       <input v-model="book.title" @input="autosave" placeholder="书名" style="width:200px" />
       <button class="btn" @click="goHome">保存返回</button>
       <button class="btn primary" @click="goReader">去阅读</button>
+      <button class="btn" :class="aiEnabled() ? 'primary' : 'ghost'" @click="showAiSettings = true" :title="aiEnabled() ? 'AI 模式已开启' : 'AI 模式未开启'">
+        🤖 AI {{ aiEnabled() ? '已开启' : '未开启' }}
+      </button>
     </div>
   </div>
 
@@ -351,7 +374,7 @@ function goHome() { save(); router.push('/') }
       <textarea v-model="s.chapSummary" placeholder="例：主角在雨夜被异兽追击，首次觉醒金手指"></textarea>
       <label>前文（可选，用于接续语气）</label>
       <textarea v-model="s.prevText" placeholder="粘贴上一段正文…"></textarea>
-      <button class="btn primary mt" @click="doWrite">生成续写草稿</button>
+      <button class="btn primary mt" @click="doWrite" :disabled="!!busy">{{ busy === '续写' ? '生成中…' : (aiEnabled() ? '🤖 AI 续写' : '生成续写草稿') }}</button>
       <label>续写结果（可编辑）</label>
       <textarea v-model="s.written" style="min-height:160px"></textarea>
       <div class="row mt">
@@ -411,6 +434,54 @@ function goHome() { save(); router.push('/') }
         </tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- AI 设置弹窗 -->
+  <div v-if="showAiSettings" class="modal-mask" @click.self="showAiSettings = false">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>🤖 AI 生成设置</h3>
+        <span class="modal-close" @click="showAiSettings = false">✕</span>
+      </div>
+      <div class="modal-body">
+        <p class="modal-tip">开启 AI 模式后，灵感/书名/简介/总纲/卷纲/章纲/角色/关系/续写将调用真实 AI 生成；未开启或未配置时回退到本地模板。Key 仅存本地浏览器，不上传。</p>
+        <label class="field-label">
+          <input type="checkbox" v-model="ai.enabled" @change="persistAi"> 启用 AI 模式
+        </label>
+        <label class="field-label">服务商</label>
+        <select v-model="ai.provider" @change="onProviderChange">
+          <option v-for="p in providers" :key="p.v" :value="p.v">{{ p.label }}</option>
+        </select>
+        <label class="field-label">API Base URL</label>
+        <input v-model="ai.baseURL" @change="persistAi" placeholder="https://open.bigmodel.cn/api/paas/v4">
+        <label class="field-label">API Key</label>
+        <input v-model="ai.apiKey" type="password" @change="persistAi" placeholder="sk-...">
+        <label class="field-label">模型</label>
+        <input v-model="ai.model" @change="persistAi" placeholder="glm-4-flash">
+        <label class="field-label">温度 ({{ ai.temperature }})</label>
+        <input type="range" min="0" max="1.5" step="0.05" v-model.number="ai.temperature" @change="persistAi">
+        <label class="field-label">续写风格</label>
+        <select v-model="ai.style" @change="persistAi">
+          <option value="番茄">番茄风（快节奏/爽点前置）</option>
+          <option value="起点">起点风（体系严谨）</option>
+          <option value="严肃">严肃文学风</option>
+        </select>
+        <p class="modal-hint" v-if="ai.enabled && !isConfigured(ai)">⚠️ 已开启 AI 模式但未配置 Key/地址，将回退本地模板。</p>
+        <details class="providers-hint">
+          <summary>常见服务商参考</summary>
+          <ul>
+            <li>智谱 GLM: https://open.bigmodel.cn/api/paas/v4 ，模型 glm-4-flash（免费额度）</li>
+            <li>通义千问: https://dashscope.aliyuncs.com/compatible-mode/v1 ，模型 qwen-turbo</li>
+            <li>DeepSeek: https://api.deepseek.com/v1 ，模型 deepseek-chat</li>
+            <li>OpenAI: https://api.openai.com/v1 ，模型 gpt-4o-mini</li>
+          </ul>
+        </details>
+      </div>
+      <div class="modal-foot">
+        <button class="btn sm ghost" @click="showAiSettings = false">取消</button>
+        <button class="btn sm primary" @click="showAiSettings = false">完成</button>
+      </div>
     </div>
   </div>
 </template>
