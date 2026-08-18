@@ -56,3 +56,23 @@ export function newBook() {
     updatedAt: Date.now(),
   }
 }
+
+// 导出全部数据为 JSON 字符串
+export function exportAll() {
+  return JSON.stringify(loadBooks(), null, 2)
+}
+
+// 从 JSON 字符串导入（合并：按 id 去重，新的覆盖旧的）
+export function importAll(jsonText) {
+  let incoming
+  try { incoming = JSON.parse(jsonText) } catch { throw new Error('JSON 格式错误') }
+  if (!Array.isArray(incoming)) throw new Error('JSON 不是作品数组')
+  const current = loadBooks()
+  const map = new Map(current.map((b) => [b.id, b]))
+  for (const b of incoming) {
+    if (!b.id) b.id = uid()
+    map.set(b.id, b)
+  }
+  saveBooks([...map.values()])
+  return incoming.length
+}

@@ -144,7 +144,13 @@ export function continueWriting(prevText, chapterSummary, style) {
     '她攥紧了手里的东西。',
     '电话在桌上震了起来。',
   ])
-  const body = `${opener}\n\n${s}。\n\n${pick(['他没有说话，只是看着窗外。', '她咬了咬牙，没回头。', '空气安静得能听见心跳。'])}\n\n${pick(['脚步声从远处传来。', '门缝里漏进一道光。', '手机亮了。'])}`
+  // 若有前文，尝试接续其最后一句的语气
+  let bridge = ''
+  if (prevText && prevText.trim()) {
+    const last = prevText.trim().split(/[。\n！？]/).filter((x) => x.trim()).pop()
+    if (last) bridge = `${last.trim()}。`
+  }
+  const body = `${opener}\n\n${bridge}${s}。\n\n${pick(['他没有说话，只是看着窗外。', '她咬了咬牙，没回头。', '空气安静得能听见心跳。'])}\n\n${pick(['脚步声从远处传来。', '门缝里漏进一道光。', '手机亮了。'])}`
   return body
 }
 

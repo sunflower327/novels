@@ -2,6 +2,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getBook, upsertBook, newBook, uid } from '../store.js'
+import { notify } from '../toast.js'
 import {
   GENRES, PLATFORMS, genInspiration, genTitles, genSynopsis, genOutline,
   genVolumeOutline, genChapterOutline, genCharacter, genRelationships,
@@ -12,6 +13,7 @@ const props = defineProps({ id: String })
 const router = useRouter()
 const book = ref(newBook())
 const step = ref(0)
+const persisted = ref(false)
 const steps = ['灵感', '书名', '简介', '总纲', '卷纲', '章纲', '角色', '关系', '续写', '去AI', '投稿']
 
 // 各步骤临时输入/输出
@@ -22,6 +24,7 @@ const s = reactive({
   chars: [], relText: '',
   newName: '', newRole: '主角',
   prevText: '', chapSummary: '', written: '',
+  editId: '', // 续写：正在编辑的章节 id
   aiText: '', aiDiag: [], aiResult: '',
   evalRows: [],
 })
@@ -31,6 +34,7 @@ function load() {
     const b = getBook(props.id)
     if (b) {
       book.value = b
+      persisted.value = true
       s.idea = b.inspiration || ''
       s.genre = b.genre || '都市'
       s.platform = b.platform || '番茄'
@@ -44,7 +48,7 @@ function load() {
   }
 }
 onMounted(load)
-watch(() => props.id, load)
+watch(() => props.id, () => { if (props.id && props.id !== book.value.id) load() })
 
 function save() {
   book.value.inspiration = s.idea
@@ -56,44 +60,56 @@ function save() {
   book.value.relationships = s.relText
   book.value.evaluation = s.evalRows
   upsertBook(book.value)
+  // 新书首次保存后跳转到带 id 的路由，避免刷新丢失
+  if (!props.id && !persisted.value) {
+    persisted.value = true
+    router.replace(`/writer/${book.value.id}`)
+  }
 }
 function autosave() { save() }
+function saved(msg = '已保存') { save(); notify(msg) }
+
+function copy(text, label = '已复制') {
+  navigator.clipboard?.writeText(text).then(() => notify(label)).catch(() => {})
+}
 
 // 灵感
 function doInspiration() {
   s.inspiration = genInspiration(s.idea, s.genre, s.platform)
+  saved('已生成灵感卡')
 }
 // 书名
 function doTitles() {
   s.titles = genTitles(s.idea, s.genre, s.platform)
+  notify('已生成书名备选')
 }
 function useTitle(t) {
   book.value.title = t.replace(/[《》]/g, '')
-  autosave()
+  saved('已采用书名')
 }
 // 简介
 function doSynopsis() {
   s.synopsis = genSynopsis(book.value.title, s.genre, s.platform, s.idea)
   book.value.synopsis = s.synopsis
-  autosave()
+  saved('已生成简介')
 }
 // 总纲
 function doOutline() {
   s.outline = genOutline(s.genre, s.inspiration?.selling?.join('、'))
   book.value.outline = { ...book.value.outline, main: s.outline }
-  autosave()
+  saved('已生成总纲')
 }
 // 卷纲
 function doVolumes() {
   s.volumes = genVolumeOutline(s.genre, 3)
   book.value.outline = { ...book.value.outline, volumes: s.volumes }
-  autosave()
+  saved('已生成卷纲')
 }
 // 章纲
 function doChapters() {
   s.chapters = genChapterOutline()
   book.value.outline = { ...book.value.outline, chapters: s.chapters }
-  autosave()
+  saved('已生成章纲')
 }
 // 角色
 function addChar() {
@@ -101,35 +117,70 @@ function addChar() {
   c.id = uid()
   s.chars.push(c)
   book.value.characters = s.chars
-  autosave()
+  saved('已添加角色')
   s.newName = ''
 }
-function delChar(i) { s.chars.splice(i, 1); autosave() }
+function delChar(i) { s.chars.splice(i, 1); saved('已删除角色') }
 // 关系
 function doRel() {
   s.relText = genRelationships(s.chars)
   book.value.relationships = s.relText
-  autosave()
+  saved('已生成关系')
 }
 // 续写
 function doWrite() {
   s.written = continueWriting(s.prevText, s.chapSummary)
+  notify('已生成续写草稿')
 }
-function addChapter() {
+function saveChapter() {
   if (!s.written.trim()) return
-  const title = s.chapSummary ? s.chapSummary.slice(0, 12) : `第${(book.value.chapters?.length || 0) + 1}章`
   book.value.chapters = book.value.chapters || []
-  book.value.chapters.push({ id: uid(), title, content: s.written })
-  autosave()
+  if (s.editId) {
+    const c = book.value.chapters.find((x) => x.id === s.editId)
+    if (c) { c.title = s.chapSummary ? s.chapSummary.slice(0, 24) : c.title; c.content = s.written }
+    saved('已更新章节')
+  } else {
+    const title = s.chapSummary ? s.chapSummary.slice(0, 24) : `第${(book.value.chapters.length || 0) + 1}章`
+    book.value.chapters.push({ id: uid(), title, content: s.written })
+    saved('已存为新章节')
+  }
   s.written = ''
   s.chapSummary = ''
+  s.editId = ''
+}
+function editChapter(c) {
+  s.editId = c.id
+  s.written = c.content
+  s.chapSummary = c.title
+  step.value = 8
+  notify('已载入章节，修改后点「保存章节」')
+}
+function delChapter(i) {
+  if (!confirm('删除该章节？')) return
+  book.value.chapters.splice(i, 1)
+  saved('已删除章节')
+}
+function moveChapter(i, dir) {
+  const arr = book.value.chapters
+  const j = i + dir
+  if (j < 0 || j >= arr.length) return
+  ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  saved('已调整顺序')
+}
+function newChapter() {
+  s.editId = ''
+  s.written = ''
+  s.chapSummary = ''
+  step.value = 8
 }
 // 去AI
 function doDiag() {
   s.aiDiag = diagnoseAI(s.aiText)
+  notify(`诊断完成，命中 ${s.aiDiag.length} 处`)
 }
 function doDeAI() {
   s.aiResult = deAI(s.aiText)
+  notify('已真人化')
 }
 // 投稿
 function doEval() {
@@ -138,7 +189,7 @@ function doEval() {
     opening: (book.value.chapters?.[0]?.content) || s.written || '',
   })
   book.value.evaluation = s.evalRows
-  autosave()
+  saved('已生成评估')
 }
 
 function goReader() { save(); router.push(`/reader/${book.value.id}`) }
@@ -172,7 +223,13 @@ function goHome() { save(); router.push('/') }
         <select v-model="s.platform" style="width:auto"><option v-for="p in PLATFORMS" :key="p">{{ p }}</option></select>
         <button class="btn primary" @click="doInspiration">生成灵感卡</button>
       </div>
-      <pre v-if="s.inspiration" class="out mt">{{ JSON.stringify(s.inspiration, null, 2) }}</pre>
+      <div v-if="s.inspiration" class="mt">
+        <div class="between">
+          <strong>灵感卡</strong>
+          <button class="btn sm" @click="copy(JSON.stringify(s.inspiration, null, 2))">复制</button>
+        </div>
+        <pre class="out mt">{{ JSON.stringify(s.inspiration, null, 2) }}</pre>
+      </div>
     </div>
 
     <!-- 书名 -->
@@ -182,7 +239,10 @@ function goHome() { save(); router.push('/') }
       <div v-if="s.titles.length" class="mt">
         <div v-for="t in s.titles" :key="t" class="row" style="justify-content:space-between;padding:8px;border-bottom:1px solid var(--border)">
           <span>{{ t }}</span>
-          <button class="btn sm primary" @click="useTitle(t)">采用</button>
+          <span class="row">
+            <button class="btn sm ghost" @click="copy(t, '已复制书名')">复制</button>
+            <button class="btn sm primary" @click="useTitle(t)">采用</button>
+          </span>
         </div>
       </div>
       <p class="muted mt" style="font-size:13px">当前书名：<strong>{{ book.title || '未命名' }}</strong></p>
@@ -192,7 +252,10 @@ function goHome() { save(); router.push('/') }
     <div v-show="step === 2">
       <h3>简介生成</h3>
       <button class="btn primary" @click="doSynopsis">按公式生成简介</button>
-      <label>简介（可手动编辑）</label>
+      <div class="between mt">
+        <label style="margin:0">简介（可手动编辑）</label>
+        <button v-if="s.synopsis" class="btn sm ghost" @click="copy(s.synopsis, '已复制简介')">复制</button>
+      </div>
       <textarea v-model="s.synopsis" @input="autosave" style="min-height:140px"></textarea>
     </div>
 
@@ -200,7 +263,11 @@ function goHome() { save(); router.push('/') }
     <div v-show="step === 3">
       <h3>总纲</h3>
       <button class="btn primary" @click="doOutline">生成总纲</button>
-      <textarea v-model="s.outline" @input="autosave" style="min-height:140px" class="mt"></textarea>
+      <div class="between mt">
+        <label style="margin:0">总纲（可编辑）</label>
+        <button v-if="s.outline" class="btn sm ghost" @click="copy(s.outline, '已复制总纲')">复制</button>
+      </div>
+      <textarea v-model="s.outline" @input="autosave" style="min-height:140px"></textarea>
     </div>
 
     <!-- 卷纲 -->
@@ -242,9 +309,20 @@ function goHome() { save(); router.push('/') }
         <div v-for="(c, i) in s.chars" :key="c.id" class="card" style="background:var(--panel2);margin-bottom:10px">
           <div class="between">
             <strong>{{ c.name }}（{{ c.role }}）</strong>
-            <button class="btn sm danger" @click="delChar(i)">删除</button>
+            <span class="row">
+              <button class="btn sm ghost" @click="copy(JSON.stringify(c, null, 2), '已复制角色卡')">复制</button>
+              <button class="btn sm danger" @click="delChar(i)">删除</button>
+            </span>
           </div>
-          <pre class="out" style="margin-top:8px">{{ JSON.stringify(c, null, 2).replace(/"id":.*,\n/, '') }}</pre>
+          <div class="grid cols-2 mt" style="gap:6px 18px;font-size:13px">
+            <div><span class="muted">身份：</span>{{ c.identity }}</div>
+            <div><span class="muted">性格：</span>{{ c.personality }}</div>
+            <div><span class="muted">能力：</span>{{ c.ability }}</div>
+            <div><span class="muted">动机：</span>{{ c.motive }}</div>
+            <div><span class="muted">弧光：</span>{{ c.arc }}</div>
+            <div><span class="muted">标志：</span>{{ c.mark }}</div>
+            <div><span class="muted">弱点：</span>{{ c.flaw }}</div>
+          </div>
         </div>
       </div>
     </div>
@@ -253,6 +331,10 @@ function goHome() { save(); router.push('/') }
     <div v-show="step === 7">
       <h3>角色关系</h3>
       <button class="btn primary" @click="doRel">生成关系描述</button>
+      <div class="between mt" v-if="s.relText">
+        <span></span>
+        <button class="btn sm ghost" @click="copy(s.relText, '已复制关系')">复制</button>
+      </div>
       <pre v-if="s.relText" class="out mt">{{ s.relText }}</pre>
       <p class="muted mt" style="font-size:13px">提示：在「角色」步骤至少添加 2 个角色后再生成。</p>
     </div>
@@ -268,9 +350,26 @@ function goHome() { save(); router.push('/') }
       <label>续写结果（可编辑）</label>
       <textarea v-model="s.written" style="min-height:160px"></textarea>
       <div class="row mt">
-        <button class="btn primary" @click="addChapter">存为新章节</button>
+        <button class="btn primary" @click="saveChapter">{{ s.editId ? '保存修改' : '存为新章节' }}</button>
+        <button v-if="s.editId" class="btn" @click="newChapter">取消编辑/新建</button>
         <span class="muted" style="font-size:13px">当前已有 {{ book.chapters?.length || 0 }} 章</span>
       </div>
+
+      <h3 class="mt">章节管理</h3>
+      <button class="btn sm" @click="newChapter">+ 新建章节</button>
+      <div v-if="book.chapters?.length" class="mt">
+        <div v-for="(c, i) in book.chapters" :key="c.id" class="row" style="justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid var(--border)">
+          <span class="muted" style="width:32px">{{ i + 1 }}.</span>
+          <span style="flex:1">{{ c.title }} <span class="muted" style="font-size:12px">· {{ c.content.length }}字</span></span>
+          <span class="row">
+            <button class="btn sm ghost" @click="moveChapter(i, -1)" :disabled="i === 0">↑</button>
+            <button class="btn sm ghost" @click="moveChapter(i, 1)" :disabled="i === book.chapters.length - 1">↓</button>
+            <button class="btn sm" @click="editChapter(c)">编辑</button>
+            <button class="btn sm danger" @click="delChapter(i)">删</button>
+          </span>
+        </div>
+      </div>
+      <div v-else class="muted mt" style="font-size:13px">还没有章节，写一段后点「存为新章节」。</div>
     </div>
 
     <!-- 去AI -->
@@ -286,7 +385,10 @@ function goHome() { save(); router.push('/') }
         <div class="muted" style="font-size:13px;margin-bottom:6px">命中 {{ s.aiDiag.length }} 处 AI 高频词：</div>
         <span v-for="d in s.aiDiag.slice(0,30)" :key="d.word+d.index" class="tag warn">{{ d.word }}</span>
       </div>
-      <label v-if="s.aiResult">润色结果</label>
+      <div class="between mt" v-if="s.aiResult">
+        <label style="margin:0">润色结果</label>
+        <button class="btn sm ghost" @click="copy(s.aiResult, '已复制润色结果')">复制</button>
+      </div>
       <textarea v-if="s.aiResult" v-model="s.aiResult" style="min-height:140px"></textarea>
     </div>
 
