@@ -18,6 +18,7 @@
 
 | 🎯 能力 | 💡 说明 |
 |---|---|
+| **🤖 AI 生成内容** | 接入智谱/通义/DeepSeek/OpenAI，灵感/书名/简介/大纲/角色/续写全流程 AI 生成 |
 | **🧠 灵感脑洞扩展** | 一句话脑洞 → 灵感卡（核心/金手指/主线骨架/卖点/风险/走向） |
 | **🏷️ 书名取名** | 按平台规律生成直白/悬念/反差/系列/梗型多款备选 |
 | **📝 简介生成** | 番茄短简介 / 起点长简介，按公式含钩子与卖点 |
@@ -55,7 +56,48 @@ npm run build
 # → 产物输出至 dist/
 ```
 
-> 无需后端、无需数据库、无需 API Key —— 打开即用，数据保存在浏览器 localStorage。
+> 无需后端、无需数据库 —— 打开即用，数据保存在浏览器 localStorage。可选接入 AI 后，生成质量大幅提升。
+
+---
+
+## 🤖 AI 生成内容
+
+创作工作台顶部「🤖 AI 未开启/已开启」按钮打开设置，开启后 9 个生成环节全部走真实 AI；未开启或未配置时自动回退到本地模板（原逻辑不变）。
+
+### 支持的 AI 生成环节
+
+| 环节 | AI 生成内容 |
+|------|------------|
+| 灵感 | 灵感卡（金手指/代价/起承转合/卖点/风险/方向） |
+| 书名 | 6 个符合平台调性的书名备选 |
+| 简介 | 番茄短简介 / 起点长简介 |
+| 总纲 | 题材/卖点/主线/结构/主题 |
+| 卷纲 | 多卷卷纲（目标/阶段/钩子） |
+| 章纲 | 10 章章纲（标题/梗概/钩子） |
+| 角色 | 角色卡（身份/性格/能力/动机/弧光/弱点） |
+| 关系 | 角色关系网络 |
+| 续写 | 400-800 字正文（接续前文语气/章末钩子） |
+
+### AI 服务配置
+
+支持 OpenAI 兼容接口，预置 5 个服务商：
+
+| 服务商 | Base URL | 推荐模型 | 备注 |
+|--------|---------|---------|------|
+| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` | 🇨🇳 有免费额度，推荐国内使用 |
+| 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-turbo` | 🇨🇳 阿里云 |
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` | 性价比高 |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` | 需科学上网 |
+| 自定义 | 任意 OpenAI 兼容端点 | — | 支持私有部署 |
+
+可配置：服务商、Base URL、API Key、模型、温度、续写风格（番茄风/起点风/严肃文学风）。**API Key 仅保存在本地浏览器，不会上传。**
+
+### 平台调性适配
+
+AI prompt 内置平台调性提示，生成内容更贴合目标平台：
+- **番茄风** — 快节奏、爽点前置、口语化
+- **起点风** — 体系严谨、世界观扎实、爽点密集
+- **严肃文学风** — 文笔细腻、节奏沉稳
 
 ---
 
@@ -72,7 +114,8 @@ web/
    ├─ style.css            # 深色主题样式
    ├─ App.vue              # 导航 + 布局
    ├─ lib/
-   │  └─ generators.js     # skill 模板移植：灵感/书名/简介/大纲/角色/续写/去AI/评估
+   │  ├─ generators.js     # skill 模板移植：灵感/书名/简介/大纲/角色/续写/去AI/评估（本地回退）
+   │  └─ ai.js             # AI 生成服务（多 provider / prompt / JSON 解析 / 智能回退）
    ├─ skills/              # 内置 skill 原文（SKILL/reference/examples）
    └─ views/
       ├─ Home.vue          # 书架
@@ -88,15 +131,18 @@ web/
 - **Vue 3** + **Vite** — 现代前端框架与构建工具
 - **Vue Router 4** — hash 路由
 - **marked** — Markdown 渲染（知识库页）
+- **OpenAI 兼容 API** — AI 内容生成（智谱/通义/DeepSeek/OpenAI）
 - **localStorage** — 本地持久化，零后端依赖
 
 ---
 
 ## 🔧 定制与扩展
 
-生成逻辑集中在 `src/lib/generators.js`，每个函数对应 skill 的一个流程。当前为**本地模板生成**（按 skill 公式产出结构化草稿）。
+生成逻辑集中在 `src/lib/`：
+- `generators.js` — 本地模板生成（按 skill 公式产出结构化草稿），无需联网即可用
+- `ai.js` — AI 生成服务，开启 AI 模式后优先调用，失败/未配置时自动回退到 `generators.js`
 
-**接入真实 AI**：将 `generators.js` 中各函数替换为后端 LLM API 调用即可，前端无需大改。
+**新增 AI 服务商**：在 `ai.js` 的 `providers` 数组追加 `{ v, label, baseURL, model }` 即可。
 
 **内置知识库更新**：替换 `src/skills/` 下的 `SKILL.md` / `reference.md` / `examples.md` 即可刷新知识库页内容。
 
@@ -114,7 +160,7 @@ web/
 
 <div align="center">
 
-**基于 [novel-trend-writing](.) skill · 本地模板生成 · 数据存于浏览器**
+**基于 [novel-trend-writing](.) skill · 本地模板 + AI 双模式 · 数据存于浏览器**
 
 ⭐ 如果这个项目对你有帮助，欢迎 Star 支持！
 
