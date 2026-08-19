@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
-import { getBook, exportBookTxt } from '../store.js'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { getBook, exportBookTxt, downloadBlob } from '../store.js'
 import { useRouter } from 'vue-router'
 
 const props = defineProps({ id: String })
@@ -8,6 +8,14 @@ const router = useRouter()
 const book = ref(null)
 const chapterIdx = ref(0)
 const fontScale = ref(17)
+const bodyRef = ref(null)
+
+function scrollTop() {
+  nextTick(() => {
+    if (bodyRef.value) bodyRef.value.scrollTop = 0
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  })
+}
 
 const PROGRESS_KEY = 'novel:reading-progress'
 
@@ -39,20 +47,14 @@ const chapters = computed(() => book.value?.chapters || [])
 const current = computed(() => chapters.value[chapterIdx.value])
 const hasOutline = computed(() => book.value?.outline?.chapters?.length > 0)
 
-function prev() { if (chapterIdx.value > 0) chapterIdx.value-- }
-function next() { if (chapterIdx.value < chapters.value.length - 1) chapterIdx.value++ }
+function prev() { if (chapterIdx.value > 0) { chapterIdx.value--; scrollTop() } }
+function next() { if (chapterIdx.value < chapters.value.length - 1) { chapterIdx.value++; scrollTop() } }
 function bigger() { fontScale.value = Math.min(24, fontScale.value + 1) }
 function smaller() { fontScale.value = Math.max(14, fontScale.value - 1) }
 function exportTxt() {
   if (!book.value) return
   const txt = exportBookTxt(book.value)
-  const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${(book.value.title || '未命名').replace(/[\\/:*?"<>|]/g, '')}.txt`
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(txt, `${(book.value.title || '未命名').replace(/[\\/:*?"<>|]/g, '')}.txt`)
 }
 </script>
 
@@ -87,12 +89,12 @@ function exportTxt() {
              :class="['s', i === chapterIdx ? 'active' : '']"
              style="padding:8px 10px;border-radius:8px;cursor:pointer;font-size:14px"
              :style="i === chapterIdx ? 'background:var(--panel2);color:var(--primary)' : ''"
-             @click="chapterIdx = i">
+             @click="chapterIdx = i; scrollTop()">
           {{ i + 1 }}. {{ c.title || '未命名章节' }}
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" ref="bodyRef">
         <div v-if="chapters.length === 0" class="empty">还没有正文。</div>
         <div v-else>
           <h3>{{ current.title }}</h3>

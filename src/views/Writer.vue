@@ -9,7 +9,7 @@ import {
   continueWriting, diagnoseAI, deAI, evalSubmission,
 } from '../lib/generators.js'
 import {
-  providers, loadSettings, saveSettings, isConfigured, smartGenerate,
+  providers, useAiSettings, persistAiSettings, isConfigured, smartGenerate,
 } from '../lib/ai.js'
 
 const props = defineProps({ id: String })
@@ -19,13 +19,13 @@ const step = ref(0)
 const persisted = ref(false)
 const steps = ['灵感', '书名', '简介', '总纲', '卷纲', '章纲', '角色', '关系', '续写', '去AI', '投稿']
 
-// AI 设置
-const ai = reactive(loadSettings())
+// AI 设置（全局单例，与拆书页共享同一份）
+const ai = useAiSettings()
 const showAiSettings = ref(false)
 const busy = ref('')
 const goalWords = ref(Number(localStorage.getItem('novel:goal-words') || 200000))
 const savedAt = ref('')
-function persistAi() { saveSettings(ai) }
+function persistAi() { persistAiSettings() }
 function onProviderChange() {
   const p = providers.find(x => x.v === ai.provider)
   if (p && p.baseURL && !ai.baseURL) ai.baseURL = p.baseURL
@@ -54,7 +54,7 @@ const s = reactive({
   outline: '', volumes: [], chapters: [],
   chars: [], relText: '',
   newName: '', newRole: '主角',
-  prevText: '', chapSummary: '', written: '',
+  prevText: '', chapSummary: '', chapTitle: '', written: '', versions: [],
   editId: '', // 续写：正在编辑的章节 id
   aiText: '', aiDiag: [], aiResult: '',
   evalRows: [],
@@ -75,6 +75,7 @@ function load() {
       s.chapters = b.outline?.chapters || []
       s.chars = b.characters || []
       s.relText = b.relationships || ''
+      s.evalRows = Array.isArray(b.evaluation) ? b.evaluation : []
     }
   }
 }
@@ -90,13 +91,19 @@ function save() {
   book.value.characters = s.chars
   book.value.relationships = s.relText
   book.value.evaluation = s.evalRows
-  upsertBook(book.value)
-  savedAt.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  try {
+    upsertBook(book.value)
+    savedAt.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  } catch (e) {
+    notify('保存失败：' + (e.message || e))
+    return false
+  }
   // 新书首次保存后跳转到带 id 的路由，避免刷新丢失
   if (!props.id && !persisted.value) {
     persisted.value = true
     router.replace(`/writer/${book.value.id}`)
   }
+  return true
 }
 // 防抖自动保存：输入时 800ms 内只写一次
 let saveTimer = null
@@ -169,14 +176,18 @@ async function doWrite() {
     chars: s.chars || [],
     prevChapters: (book.value.chapters || []).slice(-3),
   }
+  // 保留当前结果为历史版本（最多 5 个）
+  if (s.written.trim()) { s.versions.unshift(s.written); if (s.versions.length > 5) s.versions.pop() }
   const r = await runAi('writing', '续写', s.prevText, s.chapSummary, ctx)
   if (r) { s.written = r; notify('已生成续写草稿') }
 }
+function useVersion(v) { if (s.written.trim()) { s.versions.unshift(s.written); if (s.versions.length > 5) s.versions.pop() } s.written = v; notify('已切换版本') }
 // 章纲→续写联动：带入章纲梗概并跳转续写步骤
 function writeFromChapter(c) {
   s.editId = ''
   s.written = ''
-  s.chapSummary = `${c.title}：${c.summary || ''}${c.hook ? '（章末钩子：' + c.hook + '）' : ''}`
+  s.chapTitle = c.title || ''
+  s.chapSummary = `${c.summary || ''}${c.hook ? '（章末钩子：' + c.hook + '）' : ''}`
   step.value = 8
   notify('已带入章纲，点「续写」生成正文')
 }
@@ -196,7 +207,8 @@ async function genVolume() {
   notify('整卷生成中…')
   try {
     const ctx = { outline: s.outline || '', chars: s.chars || [], prevChapters: (book.value.chapters || []).slice(-3) }
-    const draft = await smartGenerate(ai, 'volumeDraft', s.chapters, ctx)
+    const onProgress = (i, total, ch) => { busy.value = `整卷 ${i}/${total}` }
+    const draft = await smartGenerate(ai, 'volumeDraft', s.chapters, ctx, onProgress)
     if (!draft || !draft.length) { notify('生成失败'); return }
     book.value.chapters = book.value.chapters || []
     for (const d of draft) {
@@ -215,21 +227,23 @@ function saveChapter() {
   book.value.chapters = book.value.chapters || []
   if (s.editId) {
     const c = book.value.chapters.find((x) => x.id === s.editId)
-    if (c) { c.title = s.chapSummary ? s.chapSummary.slice(0, 24) : c.title; c.content = s.written }
+    if (c) { c.title = s.chapTitle || c.title; c.content = s.written }
     saved('已更新章节')
   } else {
-    const title = s.chapSummary ? s.chapSummary.slice(0, 24) : `第${(book.value.chapters.length || 0) + 1}章`
+    const title = s.chapTitle || `第${(book.value.chapters.length || 0) + 1}章`
     book.value.chapters.push({ id: uid(), title, content: s.written })
     saved('已存为新章节')
   }
   s.written = ''
   s.chapSummary = ''
+  s.chapTitle = ''
   s.editId = ''
 }
 function editChapter(c) {
   s.editId = c.id
   s.written = c.content
-  s.chapSummary = c.title
+  s.chapTitle = c.title
+  s.chapSummary = ''
   step.value = 8
   notify('已载入章节，修改后点「保存章节」')
 }
@@ -249,6 +263,7 @@ function newChapter() {
   s.editId = ''
   s.written = ''
   s.chapSummary = ''
+  s.chapTitle = ''
   step.value = 8
 }
 // 去AI
@@ -371,16 +386,16 @@ function goHome() { save(); router.push('/') }
       <h3>章纲（示例 10 章）</h3>
       <div class="row">
         <button class="btn primary" @click="doChapters">生成章纲</button>
-        <button class="btn" @click="genVolume" :disabled="!s.chapters.length || !!busy">{{ busy === '整卷' ? '生成中…' : '⚡ 一键生成整卷正文' }}</button>
+        <button class="btn" @click="genVolume" :disabled="!s.chapters.length || !!busy">{{ busy && busy.startsWith('整卷') ? `生成中 ${busy}` : '⚡ 一键生成整卷正文' }}</button>
       </div>
       <div v-if="s.chapters.length" class="mt">
         <div v-for="(c, i) in s.chapters" :key="i" style="padding:8px 0;border-bottom:1px solid var(--border)">
           <div class="between">
-            <strong>{{ c.title }}</strong>
+            <input v-model="c.title" placeholder="章节标题" style="width:50%;font-weight:600" @input="autosave" />
             <button class="btn sm primary" @click="writeFromChapter(c)">续写此章 →</button>
           </div>
-          <div class="muted" style="font-size:13px">{{ c.summary }}</div>
-          <div class="muted" style="font-size:13px">钩子：{{ c.hook }}</div>
+          <input v-model="c.summary" placeholder="本章梗概" class="mt" style="font-size:13px" @input="autosave" />
+          <input v-model="c.hook" placeholder="章末钩子" style="font-size:13px;margin-top:4px" @input="autosave" />
         </div>
       </div>
     </div>
@@ -430,6 +445,8 @@ function goHome() { save(); router.push('/') }
     <!-- 续写 -->
     <div v-show="step === 8">
       <h3>续写正文</h3>
+      <label>章节标题</label>
+      <input v-model="s.chapTitle" placeholder="例：第一章 雨夜" />
       <label>本章梗概/目标</label>
       <textarea v-model="s.chapSummary" placeholder="例：主角在雨夜被异兽追击，首次觉醒金手指"></textarea>
       <label>前文（可选，用于接续语气）</label>
@@ -437,6 +454,10 @@ function goHome() { save(); router.push('/') }
       <button class="btn primary mt" @click="doWrite" :disabled="!!busy">{{ busy === '续写' ? '生成中…' : (aiEnabled() ? '🤖 AI 续写' : '生成续写草稿') }}</button>
       <label>续写结果（可编辑）</label>
       <textarea v-model="s.written" style="min-height:160px"></textarea>
+      <div v-if="s.versions.length" class="row mt" style="gap:6px">
+        <span class="muted" style="font-size:12px">历史版本：</span>
+        <button v-for="(v, i) in s.versions" :key="i" class="btn sm ghost" @click="useVersion(v)" :title="v.slice(0,30)">v{{ s.versions.length - i }}</button>
+      </div>
       <div class="word-stats mt">
         <span class="muted" style="font-size:13px">本章 {{ writtenWords }} 字 · 累计 {{ totalWords }} 字</span>
         <div class="progress-wrap">

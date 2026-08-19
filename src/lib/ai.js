@@ -42,6 +42,20 @@ export function saveSettings(s) {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)) } catch (e) {}
 }
 
+// 全局共享 settings 单例：Writer / Teardown 等多处共用同一份，改一处全同步
+import { reactive as _reactive } from 'vue'
+let _shared = null
+export function useAiSettings() {
+  if (!_shared) {
+    _shared = _reactive(loadSettings())
+    const origSet = _shared.__persist = () => saveSettings(_shared)
+  }
+  return _shared
+}
+export function persistAiSettings() {
+  if (_shared) saveSettings(_shared)
+}
+
 export function isConfigured(s) {
   return !!(s.apiKey && (s.baseURL || providers.find(p => p.v === s.provider)?.baseURL))
 }
@@ -56,23 +70,41 @@ function resolve(s) {
   }
 }
 
-async function callChat(s, messages, { json = false } = {}) {
+async function callChat(s, messages, { json = false, timeout = 60000, retries = 1 } = {}) {
   const { baseURL, apiKey, model, temperature } = resolve(s)
   if (!baseURL) throw new Error('未配置 API 地址')
   if (!apiKey) throw new Error('未配置 API Key')
   const body = { model, messages, temperature }
   if (json) body.response_format = { type: 'json_object' }
-  const res = await fetch(`${baseURL}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '')
-    throw new Error(`API ${res.status}: ${txt.slice(0, 200)}`)
+  const url = `${baseURL}/chat/completions`
+  let lastErr
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), timeout)
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      })
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '')
+        throw new Error(`API ${res.status}: ${txt.slice(0, 200)}`)
+      }
+      const data = await res.json()
+      return data.choices?.[0]?.message?.content || ''
+    } catch (e) {
+      lastErr = e
+      // 超时/中断才重试；4xx 业务错误不重试
+      const isAbort = e.name === 'AbortError'
+      const isNet = e instanceof TypeError // 网络错误
+      if (!isAbort && !isNet) break
+    } finally {
+      clearTimeout(timer)
+    }
   }
-  const data = await res.json()
-  return data.choices?.[0]?.message?.content || ''
+  throw lastErr || new Error('请求失败')
 }
 
 function extractJson(content) {
@@ -240,11 +272,12 @@ ${sample}`
 }
 
 // 11. 一键生成整卷：按章纲逐章生成正文草稿，返回 [{title, content}]
-export async function genVolumeDraftAI(s, chapters, ctx) {
+export async function genVolumeDraftAI(s, chapters, ctx, onProgress) {
   const out = []
   const c = ctx || {}
   for (let i = 0; i < chapters.length; i++) {
     const ch = chapters[i]
+    if (onProgress) onProgress(i + 1, chapters.length, ch)
     const summary = `${ch.title || ''}：${ch.summary || ''}${ch.hook ? '（章末钩子：' + ch.hook + '）' : ''}`
     const prev = i > 0 ? out[i - 1].content : (c.prevText || '')
     const subCtx = { ...c, prevChapters: out.slice(-3) }
@@ -254,38 +287,25 @@ export async function genVolumeDraftAI(s, chapters, ctx) {
   return out
 }
 
+// 生成函数注册表：[aiFn, localFn]，避免两份 map 重复维护易漏
+const REGISTRY = {
+  inspiration: [genInspirationAI, (a) => genInspiration(...a)],
+  titles: [genTitlesAI, (a) => genTitles(...a)],
+  synopsis: [genSynopsisAI, (a) => genSynopsis(...a)],
+  outline: [genOutlineAI, (a) => genOutline(...a)],
+  volumes: [genVolumesAI, (a) => genVolumeOutline(...a)],
+  chapters: [genChaptersAI, (a) => genChapterOutline(...a)],
+  character: [genCharacterAI, (a) => genCharacter(...a)],
+  relationships: [genRelationshipsAI, (a) => genRelationships(...a)],
+  writing: [continueWritingAI, (a) => continueWriting(...a)],
+  teardown: [teardownBookAI, (a) => teardownBook(...a)],
+  volumeDraft: [genVolumeDraftAI, (a) => a[0].map((ch, i) => ({ title: ch.title || `第${i + 1}章`, content: continueWriting('', `${ch.title}：${ch.summary || ''}`) }))],
+}
+
 // 统一入口：根据是否启用 AI 选择实现
 export async function smartGenerate(s, kind, ...args) {
-  if (s.enabled && isConfigured(s)) {
-    const map = {
-      inspiration: genInspirationAI,
-      titles: genTitlesAI,
-      synopsis: genSynopsisAI,
-      outline: genOutlineAI,
-      volumes: genVolumesAI,
-      chapters: genChaptersAI,
-      character: genCharacterAI,
-      relationships: genRelationshipsAI,
-      writing: continueWritingAI,
-      teardown: teardownBookAI,
-      volumeDraft: genVolumeDraftAI,
-    }
-    const fn = map[kind]
-    if (fn) return await fn(s, ...args)
-  }
-  // 回退本地模板
-  const local = {
-    inspiration: () => genInspiration(...args),
-    titles: () => genTitles(...args),
-    synopsis: () => genSynopsis(...args),
-    outline: () => genOutline(...args),
-    volumes: () => genVolumeOutline(...args),
-    chapters: () => genChapterOutline(...args),
-    character: () => genCharacter(...args),
-    relationships: () => genRelationships(...args),
-    writing: () => continueWriting(...args),
-    teardown: () => teardownBook(...args),
-    volumeDraft: (chs) => chs.map((ch, i) => ({ title: ch.title || `第${i + 1}章`, content: continueWriting('', `${ch.title}：${ch.summary || ''}`) })),
-  }
-  return local[kind](...args)
+  const entry = REGISTRY[kind]
+  if (!entry) throw new Error('未知生成类型: ' + kind)
+  if (s.enabled && isConfigured(s)) return await entry[0](s, ...args)
+  return entry[1](args)
 }

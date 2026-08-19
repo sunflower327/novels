@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { loadBooks, deleteBook, exportAll, importAll, bookWordCount, togglePin } from '../store.js'
+import { loadBooks, deleteBook, exportAll, importAll, bookWordCount, togglePin, downloadBlob } from '../store.js'
 import { useRouter } from 'vue-router'
 import { notify } from '../toast.js'
 
@@ -52,13 +52,7 @@ const genres = computed(() => [...new Set(books.value.map((b) => b.genre).filter
 const statuses = computed(() => [...new Set(books.value.map((b) => b.status || '构思中').filter(Boolean))])
 
 function doExport() {
-  const blob = new Blob([exportAll()], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `novels-backup-${new Date().toISOString().slice(0, 10)}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(exportAll(), `novels-backup-${new Date().toISOString().slice(0, 10)}.json`, 'application/json')
   notify('已导出备份')
 }
 function onImport(e) {

@@ -14,7 +14,14 @@ export function loadBooks() {
 }
 
 export function saveBooks(books) {
-  localStorage.setItem(KEY, JSON.stringify(books))
+  try {
+    localStorage.setItem(KEY, JSON.stringify(books))
+  } catch (e) {
+    if (e && (e.name === 'QuotaExceededError' || e.code === 22)) {
+      throw new Error('存储空间已满（localStorage 上限约 5MB），请导出备份后删除部分作品或章节')
+    }
+    throw e
+  }
 }
 
 export function getBook(id) {
@@ -97,6 +104,17 @@ export function setTheme(t) {
 }
 
 // 导出全部数据为 JSON 字符串
+// 通用下载：把文本/JSON 作为文件下载
+export function downloadBlob(content, filename, type = 'text/plain;charset=utf-8') {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export function exportAll() {
   return JSON.stringify(loadBooks(), null, 2)
 }

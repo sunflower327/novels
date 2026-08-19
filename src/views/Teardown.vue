@@ -2,11 +2,11 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { notify } from '../toast.js'
-import { loadSettings, saveSettings, isConfigured, smartGenerate } from '../lib/ai.js'
+import { loadSettings, useAiSettings, persistAiSettings, isConfigured, smartGenerate } from '../lib/ai.js'
 import { upsertBook, newBook, uid } from '../store.js'
 
 const router = useRouter()
-const ai = reactive(loadSettings())
+const ai = useAiSettings()
 const input = ref('')
 const report = ref(null)
 const busy = ref(false)
