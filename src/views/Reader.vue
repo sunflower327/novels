@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { getBook } from '../store.js'
+import { getBook, exportBookTxt } from '../store.js'
 import { useRouter } from 'vue-router'
 
 const props = defineProps({ id: String })
@@ -43,6 +43,17 @@ function prev() { if (chapterIdx.value > 0) chapterIdx.value-- }
 function next() { if (chapterIdx.value < chapters.value.length - 1) chapterIdx.value++ }
 function bigger() { fontScale.value = Math.min(24, fontScale.value + 1) }
 function smaller() { fontScale.value = Math.max(14, fontScale.value - 1) }
+function exportTxt() {
+  if (!book.value) return
+  const txt = exportBookTxt(book.value)
+  const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${(book.value.title || '未命名').replace(/[\\/:*?"<>|]/g, '')}.txt`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 </script>
 
 <template>
@@ -60,6 +71,7 @@ function smaller() { fontScale.value = Math.max(14, fontScale.value - 1) }
       <div class="row">
         <button class="btn sm ghost" @click="smaller" aria-label="缩小字号">A-</button>
         <button class="btn sm ghost" @click="bigger" aria-label="放大字号">A+</button>
+        <button class="btn sm" @click="exportTxt">导出 txt</button>
         <button class="btn sm" @click="router.push(`/writer/${book.id}`)">去编辑</button>
         <button class="btn sm" @click="router.push('/')">书架</button>
       </div>

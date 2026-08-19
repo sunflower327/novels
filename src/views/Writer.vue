@@ -24,6 +24,7 @@ const ai = reactive(loadSettings())
 const showAiSettings = ref(false)
 const busy = ref('')
 const goalWords = ref(Number(localStorage.getItem('novel:goal-words') || 200000))
+const savedAt = ref('')
 function persistAi() { saveSettings(ai) }
 function onProviderChange() {
   const p = providers.find(x => x.v === ai.provider)
@@ -90,6 +91,7 @@ function save() {
   book.value.relationships = s.relText
   book.value.evaluation = s.evalRows
   upsertBook(book.value)
+  savedAt.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   // 新书首次保存后跳转到带 id 的路由，避免刷新丢失
   if (!props.id && !persisted.value) {
     persisted.value = true
@@ -178,6 +180,36 @@ function writeFromChapter(c) {
   step.value = 8
   notify('已带入章纲，点「续写」生成正文')
 }
+// 续写→去AI 一键流转：把续写结果送入去AI痕迹步骤
+function sendToDeAI() {
+  if (!s.written.trim()) { notify('暂无续写内容'); return }
+  s.aiText = s.written
+  s.aiResult = ''
+  s.aiDiag = []
+  step.value = 9
+  notify('已送入去AI痕迹，点「一键真人化」')
+}
+async function genVolume() {
+  if (!s.chapters.length) { notify('请先生成章纲'); return }
+  if (!confirm(`将按 ${s.chapters.length} 章章纲批量生成正文并入库，AI 模式可能耗时较长，继续？`)) return
+  busy.value = '整卷'
+  notify('整卷生成中…')
+  try {
+    const ctx = { outline: s.outline || '', chars: s.chars || [], prevChapters: (book.value.chapters || []).slice(-3) }
+    const draft = await smartGenerate(ai, 'volumeDraft', s.chapters, ctx)
+    if (!draft || !draft.length) { notify('生成失败'); return }
+    book.value.chapters = book.value.chapters || []
+    for (const d of draft) {
+      book.value.chapters.push({ id: uid(), title: d.title, content: d.content })
+    }
+    save()
+    notify(`已生成 ${draft.length} 章并入库`)
+  } catch (e) {
+    notify('整卷生成失败：' + (e.message || e))
+  } finally {
+    busy.value = ''
+  }
+}
 function saveChapter() {
   if (!s.written.trim()) return
   book.value.chapters = book.value.chapters || []
@@ -247,6 +279,7 @@ function goHome() { save(); router.push('/') }
     <h2>创作工作台</h2>
     <div class="row">
       <input v-model="book.title" @input="autosave" placeholder="书名" style="width:200px" />
+      <span class="muted" style="font-size:12px" v-if="savedAt">已保存于 {{ savedAt }}</span>
       <button class="btn" @click="goHome">保存返回</button>
       <button class="btn primary" @click="goReader">去阅读</button>
       <button class="btn" :class="aiEnabled() ? 'primary' : 'ghost'" @click="showAiSettings = true" :title="aiEnabled() ? 'AI 模式已开启' : 'AI 模式未开启'">
@@ -336,7 +369,10 @@ function goHome() { save(); router.push('/') }
     <!-- 章纲 -->
     <div v-show="step === 5">
       <h3>章纲（示例 10 章）</h3>
-      <button class="btn primary" @click="doChapters">生成章纲</button>
+      <div class="row">
+        <button class="btn primary" @click="doChapters">生成章纲</button>
+        <button class="btn" @click="genVolume" :disabled="!s.chapters.length || !!busy">{{ busy === '整卷' ? '生成中…' : '⚡ 一键生成整卷正文' }}</button>
+      </div>
       <div v-if="s.chapters.length" class="mt">
         <div v-for="(c, i) in s.chapters" :key="i" style="padding:8px 0;border-bottom:1px solid var(--border)">
           <div class="between">
@@ -412,6 +448,7 @@ function goHome() { save(); router.push('/') }
       </div>
       <div class="row mt">
         <button class="btn primary" @click="saveChapter">{{ s.editId ? '保存修改' : '存为新章节' }}</button>
+        <button class="btn" @click="sendToDeAI" :disabled="!s.written.trim()">送去除AI痕迹 →</button>
         <button v-if="s.editId" class="btn" @click="newChapter">取消编辑/新建</button>
         <span class="muted" style="font-size:13px">当前已有 {{ book.chapters?.length || 0 }} 章</span>
       </div>

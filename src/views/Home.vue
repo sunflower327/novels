@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { loadBooks, deleteBook, exportAll, importAll, bookWordCount } from '../store.js'
+import { loadBooks, deleteBook, exportAll, importAll, bookWordCount, togglePin } from '../store.js'
 import { useRouter } from 'vue-router'
 import { notify } from '../toast.js'
 
@@ -8,6 +8,8 @@ const books = ref([])
 const router = useRouter()
 const search = ref('')
 const sortKey = ref('updated')
+const filterGenre = ref('')
+const filterStatus = ref('')
 
 function refresh() { books.value = loadBooks() }
 onMounted(refresh)
@@ -16,6 +18,7 @@ function del(id) {
   if (confirm('删除这本书？此操作不可恢复。')) { deleteBook(id); refresh() }
 }
 function fmt(ts) { return ts ? new Date(ts).toLocaleString('zh-CN') : '' }
+function pin(id) { togglePin(id); refresh() }
 
 const PALETTE = {
   都市: 'linear-gradient(135deg,#3a4a6a,#1a2230)', 末世: 'linear-gradient(135deg,#5a3a3a,#241a1a)',
@@ -34,12 +37,19 @@ const filtered = computed(() => {
     const q = search.value.trim().toLowerCase()
     arr = arr.filter((b) => (b.title || '').toLowerCase().includes(q) || (b.synopsis || '').toLowerCase().includes(q))
   }
+  if (filterGenre.value) arr = arr.filter((b) => (b.genre || '') === filterGenre.value)
+  if (filterStatus.value) arr = arr.filter((b) => (b.status || '构思中') === filterStatus.value)
   arr.sort((a, b) => {
+    // 置顶优先
+    if (!!b.pinned !== !!a.pinned) return b.pinned ? 1 : -1
     if (sortKey.value === 'title') return (a.title || '').localeCompare(b.title || '', 'zh')
     return (b.updatedAt || 0) - (a.updatedAt || 0)
   })
   return arr
 })
+
+const genres = computed(() => [...new Set(books.value.map((b) => b.genre).filter(Boolean))])
+const statuses = computed(() => [...new Set(books.value.map((b) => b.status || '构思中').filter(Boolean))])
 
 function doExport() {
   const blob = new Blob([exportAll()], { type: 'application/json' })
@@ -73,7 +83,15 @@ function onImport(e) {
   <div class="between mb">
     <h2>我的书架</h2>
     <div class="row">
-      <input v-model="search" placeholder="搜索书名/简介" style="width:180px" />
+      <input v-model="search" placeholder="搜索书名/简介" style="width:160px" />
+      <select v-model="filterGenre" style="width:auto">
+        <option value="">全部题材</option>
+        <option v-for="g in genres" :key="g" :value="g">{{ g }}</option>
+      </select>
+      <select v-model="filterStatus" style="width:auto">
+        <option value="">全部状态</option>
+        <option v-for="st in statuses" :key="st" :value="st">{{ st }}</option>
+      </select>
       <select v-model="sortKey" style="width:auto">
         <option value="updated">按更新时间</option>
         <option value="title">按书名</option>
@@ -106,6 +124,7 @@ function onImport(e) {
       <div class="row" style="margin-top:auto">
         <button class="btn sm primary" @click="router.push(`/reader/${b.id}`)">阅读</button>
         <button class="btn sm" @click="router.push(`/writer/${b.id}`)">编辑</button>
+        <button class="btn sm ghost" @click="pin(b.id)">{{ b.pinned ? '取消置顶' : '📌 置顶' }}</button>
         <button class="btn sm danger" @click="del(b.id)">删除</button>
       </div>
       <div class="muted" style="font-size:11px">{{ fmt(b.updatedAt) }}</div>

@@ -44,6 +44,29 @@ export function bookWordCount(book) {
   return book.chapters.reduce((sum, c) => sum + (c.content ? c.content.length : 0), 0)
 }
 
+// 切换置顶
+export function togglePin(id) {
+  const books = loadBooks()
+  const b = books.find((x) => x.id === id)
+  if (b) { b.pinned = !b.pinned; b.updatedAt = Date.now(); saveBooks(books) }
+  return b?.pinned
+}
+
+// 导出单本书为纯文本
+export function exportBookTxt(book) {
+  const lines = []
+  lines.push(`《${book.title || '未命名'}》`)
+  lines.push(`题材：${book.genre || ''}　平台：${book.platform || ''}　状态：${book.status || ''}`)
+  if (book.synopsis) lines.push('', '【简介】', book.synopsis)
+  if (Array.isArray(book.chapters) && book.chapters.length) {
+    lines.push('', '【正文】')
+    for (const c of book.chapters) {
+      lines.push('', `${c.title || ''}`, '', c.content || '')
+    }
+  }
+  return lines.join('\n')
+}
+
 export function newBook() {
   return {
     id: uid(),

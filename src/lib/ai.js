@@ -239,6 +239,21 @@ ${sample}`
   throw new Error('AI 返回无法解析')
 }
 
+// 11. 一键生成整卷：按章纲逐章生成正文草稿，返回 [{title, content}]
+export async function genVolumeDraftAI(s, chapters, ctx) {
+  const out = []
+  const c = ctx || {}
+  for (let i = 0; i < chapters.length; i++) {
+    const ch = chapters[i]
+    const summary = `${ch.title || ''}：${ch.summary || ''}${ch.hook ? '（章末钩子：' + ch.hook + '）' : ''}`
+    const prev = i > 0 ? out[i - 1].content : (c.prevText || '')
+    const subCtx = { ...c, prevChapters: out.slice(-3) }
+    const content = await continueWritingAI(s, prev, summary, subCtx)
+    out.push({ title: ch.title || `第${i + 1}章`, content })
+  }
+  return out
+}
+
 // 统一入口：根据是否启用 AI 选择实现
 export async function smartGenerate(s, kind, ...args) {
   if (s.enabled && isConfigured(s)) {
@@ -253,6 +268,7 @@ export async function smartGenerate(s, kind, ...args) {
       relationships: genRelationshipsAI,
       writing: continueWritingAI,
       teardown: teardownBookAI,
+      volumeDraft: genVolumeDraftAI,
     }
     const fn = map[kind]
     if (fn) return await fn(s, ...args)
@@ -269,6 +285,7 @@ export async function smartGenerate(s, kind, ...args) {
     relationships: () => genRelationships(...args),
     writing: () => continueWriting(...args),
     teardown: () => teardownBook(...args),
+    volumeDraft: (chs) => chs.map((ch, i) => ({ title: ch.title || `第${i + 1}章`, content: continueWriting('', `${ch.title}：${ch.summary || ''}`) })),
   }
   return local[kind](...args)
 }
