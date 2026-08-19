@@ -1,0 +1,15 @@
+{
+  "name": "novel-cli",
+  "version": "1.0.0",
+  "description": "网文创作命令行工具 - 在终端用命令生成灵感/书名/简介/大纲/章纲/角色/续写/拆书（复用 web 版 AI 能力，可在 Cursor/Qoder 终端执行）",
+  "type": "module",
+  "bin": {
+    "novel": "./bin.mjs"
+  },
+  "scripts": {
+    "novel": "node bin.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
