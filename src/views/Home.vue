@@ -101,27 +101,27 @@ function onImport(e) {
   </div>
 
   <div v-else class="grid cols-3">
-    <div class="card" v-for="b in filtered" :key="b.id" style="display:flex;flex-direction:column;gap:10px">
-      <div class="book-cover" :style="coverStyle(b)">{{ b.title || '未命名' }}</div>
-      <div>
-        <div class="row" style="justify-content:space-between">
-          <strong>{{ b.title || '未命名作品' }}</strong>
-          <span class="tag">{{ b.platform }}</span>
+    <div class="card book-card" v-for="b in filtered" :key="b.id">
+      <div class="book-cover" :style="coverStyle(b)">{{ (b.title || '未命名').slice(0, 8) }}</div>
+      <div class="book-info">
+        <div class="row" style="justify-content:space-between;align-items:flex-start">
+          <strong class="book-title">{{ b.title || '未命名作品' }}</strong>
+          <span v-if="b.pinned" class="pin-mark" title="已置顶">📌</span>
         </div>
-        <div class="muted" style="font-size:13px;margin-top:4px">
-          {{ b.genre || '未分类' }} · {{ b.status || '构思中' }} · {{ b.chapters?.length || 0 }} 章 · {{ bookWordCount(b) }} 字
+        <div class="muted book-meta">
+          <span class="tag sm-tag">{{ b.genre || '未分类' }}</span>
+          <span class="tag sm-tag">{{ b.status || '构思中' }}</span>
+          <span>{{ b.chapters?.length || 0 }} 章 · {{ bookWordCount(b) }} 字</span>
         </div>
-        <p class="muted" style="font-size:13px;margin:8px 0 0" v-if="b.synopsis">
-          {{ b.synopsis.slice(0, 60) }}{{ b.synopsis.length > 60 ? '…' : '' }}
-        </p>
+        <p class="book-syn" v-if="b.synopsis">{{ b.synopsis.slice(0, 60) }}{{ b.synopsis.length > 60 ? '…' : '' }}</p>
       </div>
-      <div class="row" style="margin-top:auto">
+      <div class="book-actions">
         <button class="btn sm primary" @click="router.push(`/reader/${b.id}`)">阅读</button>
         <button class="btn sm" @click="router.push(`/writer/${b.id}`)">编辑</button>
-        <button class="btn sm ghost" @click="pin(b.id)">{{ b.pinned ? '取消置顶' : '📌 置顶' }}</button>
-        <button class="btn sm danger" @click="del(b.id)">删除</button>
+        <button class="btn sm ghost icon-btn" @click="pin(b.id)" :title="b.pinned ? '取消置顶' : '置顶'">{{ b.pinned ? '📍' : '📌' }}</button>
+        <button class="btn sm danger icon-btn" @click="del(b.id)" title="删除">🗑</button>
       </div>
-      <div class="muted" style="font-size:11px">{{ fmt(b.updatedAt) }}</div>
+      <div class="book-time">{{ fmt(b.updatedAt) }}</div>
     </div>
   </div>
 </template>

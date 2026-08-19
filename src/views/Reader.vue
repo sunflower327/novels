@@ -86,9 +86,7 @@ function exportTxt() {
         <div class="muted" style="font-size:13px;margin-bottom:8px">目录（{{ chapters.length }}章）</div>
         <div v-if="chapters.length === 0" class="muted" style="font-size:13px">暂无正文章节，去「编辑」里写吧。</div>
         <div v-for="(c, i) in chapters" :key="c.id"
-             :class="['s', i === chapterIdx ? 'active' : '']"
-             style="padding:8px 10px;border-radius:8px;cursor:pointer;font-size:14px"
-             :style="i === chapterIdx ? 'background:var(--panel2);color:var(--primary)' : ''"
+             :class="['toc-item', i === chapterIdx ? 'active' : '']"
              @click="chapterIdx = i; scrollTop()">
           {{ i + 1 }}. {{ c.title || '未命名章节' }}
         </div>

@@ -18,7 +18,7 @@ function toggleTheme() {
 <template>
   <div class="app">
     <header class="nav">
-      <RouterLink to="/" class="brand">📖 网文创作与阅读</RouterLink>
+      <RouterLink to="/" class="brand">网文创作与阅读</RouterLink>
       <nav>
         <RouterLink to="/" aria-label="书架">书架</RouterLink>
         <RouterLink to="/writer" aria-label="创作">创作</RouterLink>
