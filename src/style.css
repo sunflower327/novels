@@ -181,6 +181,7 @@ pre.out {
 .book-actions .icon-btn { padding: 5px 8px; }
 .pin-mark { font-size: 13px; }
 .book-time { font-size: 11px; color: var(--muted2); }
+.storage-bar { margin-bottom: 16px; }
 
 /* 阅读器 */
 .reader-text { font-size: 17px; line-height: 2; max-width: 720px; margin: 0 auto; }

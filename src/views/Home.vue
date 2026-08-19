@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { loadBooks, deleteBook, exportAll, importAll, bookWordCount, togglePin, downloadBlob } from '../store.js'
+import { loadBooks, deleteBook, exportAll, importAll, importBookJson, bookWordCount, togglePin, downloadBlob, exportBookJson, storageEstimate } from '../store.js'
 import { useRouter } from 'vue-router'
 import { notify } from '../toast.js'
 
@@ -10,15 +10,21 @@ const search = ref('')
 const sortKey = ref('updated')
 const filterGenre = ref('')
 const filterStatus = ref('')
+const storage = ref({ usage: 0, quota: 0 })
 
 function refresh() { books.value = loadBooks() }
-onMounted(refresh)
+async function refreshStorage() { storage.value = await storageEstimate() }
+onMounted(() => { refresh(); refreshStorage() })
 
 function del(id) {
-  if (confirm('删除这本书？此操作不可恢复。')) { deleteBook(id); refresh() }
+  if (confirm('删除这本书？此操作不可恢复。')) { deleteBook(id); refresh(); refreshStorage() }
 }
 function fmt(ts) { return ts ? new Date(ts).toLocaleString('zh-CN') : '' }
 function pin(id) { togglePin(id); refresh() }
+function exportOne(b) {
+  downloadBlob(exportBookJson(b), `${(b.title || '未命名').replace(/[\\/:*?"<>|]/g, '')}.json`, 'application/json')
+  notify('已导出单本 JSON')
+}
 
 const PALETTE = {
   都市: 'linear-gradient(135deg,#3a4a6a,#1a2230)', 末世: 'linear-gradient(135deg,#5a3a3a,#241a1a)',
@@ -61,8 +67,12 @@ function onImport(e) {
   const reader = new FileReader()
   reader.onload = () => {
     try {
-      const n = importAll(reader.result)
-      refresh()
+      const text = String(reader.result || '')
+      const data = JSON.parse(text)
+      let n
+      if (Array.isArray(data)) n = importAll(text)
+      else { importBookJson(text); n = 1 }
+      refresh(); refreshStorage()
       notify(`已导入 ${n} 部作品`)
     } catch (err) {
       notify('导入失败：' + err.message)
@@ -71,6 +81,9 @@ function onImport(e) {
   reader.readAsText(file)
   e.target.value = ''
 }
+const usagePct = computed(() => storage.value.quota ? Math.min(100, Math.round(storage.value.usage / storage.value.quota * 100)) : 0)
+const usageMB = computed(() => (storage.value.usage / 1048576).toFixed(1))
+const quotaMB = computed(() => (storage.value.quota / 1048576).toFixed(0))
 </script>
 
 <template>
@@ -96,6 +109,11 @@ function onImport(e) {
     </div>
   </div>
 
+  <div v-if="storage.quota" class="storage-bar mt">
+    <span class="muted" style="font-size:12px">存储：{{ usageMB }}MB / {{ quotaMB }}MB（{{ usagePct }}%）</span>
+    <div class="progress-bar" style="height:6px;margin-top:4px"><div class="progress-fill" :style="{ width: usagePct + '%' }"></div></div>
+  </div>
+
   <div v-if="filtered.length === 0" class="empty card">
     {{ books.length === 0 ? '书架空空如也。点击右上角「新建作品」开始你的第一本小说。' : '没有匹配的作品。' }}
   </div>
@@ -118,6 +136,7 @@ function onImport(e) {
       <div class="book-actions">
         <button class="btn sm primary" @click="router.push(`/reader/${b.id}`)">阅读</button>
         <button class="btn sm" @click="router.push(`/writer/${b.id}`)">编辑</button>
+        <button class="btn sm ghost icon-btn" @click="exportOne(b)" title="导出 JSON">💾</button>
         <button class="btn sm ghost icon-btn" @click="pin(b.id)" :title="b.pinned ? '取消置顶' : '置顶'">{{ b.pinned ? '📍' : '📌' }}</button>
         <button class="btn sm danger icon-btn" @click="del(b.id)" title="删除">🗑</button>
       </div>
