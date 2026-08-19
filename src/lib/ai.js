@@ -5,6 +5,7 @@
 import {
   genInspiration, genTitles, genSynopsis, genOutline,
   genVolumeOutline, genChapterOutline, genCharacter, genRelationships, continueWriting,
+  teardownBook,
 } from './generators.js'
 
 export const providers = [
@@ -200,6 +201,34 @@ ${prevText ? `前文末尾：...${prevText.slice(-200)}` : '（无前文，开�
   return await callChat(s, [{ role: 'user', content: prompt }])
 }
 
+// 10. 拆书：分析一段小说正文，输出结构化拆解报告
+export async function teardownBookAI(s, text) {
+  const sample = (text || '').slice(0, 6000)
+  const prompt = `你是网文拆书分析师。分析下面这段小说正文，输出一份结构化拆书报告（JSON）：
+{
+  "genre": "题材判断（如都市/玄幻/末世等）",
+  "subgenre": "细分类型/流派",
+  "finger": "金手指/核心能力（没有则填无）",
+  "selling": ["卖点1","卖点2","卖点3"],
+  "protagonist": {"identity":"身份","personality":"性格","motive":"动机","mark":"标志动作/口头禅"},
+  "opening": "开篇结构分析（黄金三章是否亮相金手指/首爽/冲突/钩子）",
+  "pace": "节奏分析（爽点密度/铺垫与高潮比例）",
+  "hooks": ["章末钩子示例1","示例2"],
+  "tropes": ["套路1","套路2"],
+  "takeaways": ["可借鉴点1","可借鉴点2"],
+  "flaws": ["硬伤/风险1","风险2"],
+  "summary": "一句话总评"
+}
+要求：基于文本客观分析，不臆测；字段尽量具体；只输出 JSON。
+
+小说正文：
+${sample}`
+  const content = await callChat(s, [{ role: 'user', content: prompt }], { json: true })
+  const obj = extractJson(content)
+  if (obj && typeof obj === 'object' && (obj.genre || obj.summary)) return obj
+  throw new Error('AI 返回无法解析')
+}
+
 // 统一入口：根据是否启用 AI 选择实现
 export async function smartGenerate(s, kind, ...args) {
   if (s.enabled && isConfigured(s)) {
@@ -213,6 +242,7 @@ export async function smartGenerate(s, kind, ...args) {
       character: genCharacterAI,
       relationships: genRelationshipsAI,
       writing: continueWritingAI,
+      teardown: teardownBookAI,
     }
     const fn = map[kind]
     if (fn) return await fn(s, ...args)
@@ -228,6 +258,7 @@ export async function smartGenerate(s, kind, ...args) {
     character: () => genCharacter(...args),
     relationships: () => genRelationships(...args),
     writing: () => continueWriting(...args),
+    teardown: () => teardownBook(...args),
   }
   return local[kind](...args)
 }

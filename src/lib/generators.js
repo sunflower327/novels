@@ -212,3 +212,67 @@ export function evalSubmission({ title, synopsis, platform, opening }) {
   pass('合规', '无敏感词/违规', /暴力|色情|政治/.test(synopsis || '') ? '❌' : '✅', '避免低俗/血腥/政治敏感/导流')
   return checks
 }
+
+// 十二、拆书（本地回退：关键词匹配粗分析）
+const GENRE_KEYWORDS = {
+  末世: ['丧尸', '末世', '异种', '幸存者', '避难所', '废墟', '变异'],
+  玄幻: ['灵气', '修仙', '丹田', '功法', '宗门', '境界', '元婴', '渡劫'],
+  仙侠: ['飞剑', '道祖', '仙', '天劫', '法宝', '洞府'],
+  都市: ['公司', '总裁', '都市', '签到', '系统', '直播', '学霸'],
+  科幻: ['星际', '飞船', '机甲', '文明', '宇宙', '虫族', '智脑'],
+  悬疑: ['案件', '侦探', '凶手', '线索', '诡异', '规则怪谈', '解谜'],
+  重生: ['重生', '上辈子', '前世', '重来一次'],
+  系统: ['系统', '面板', '任务', '签到', '抽奖', '成就'],
+  历史: ['穿越', '大唐', '大明', '朝堂', '皇帝', '藩镇'],
+  游戏: ['副本', '玩家', 'NPC', '全息', '登录', '掉落'],
+}
+
+const FINGER_KEYWORDS = ['系统', '签到', '面板', '模拟器', '读心', '透视', '空间', '重生', '预知', '传承', '老爷爷', '血脉', '吞噬', '商城', '成就', '抽奖', '任务']
+
+export function teardownBook(text) {
+  const t = text || ''
+  const len = t.length
+  // 题材判断：统计关键词命中
+  let genre = '都市', maxHit = 0
+  for (const [g, kws] of Object.entries(GENRE_KEYWORDS)) {
+    let hit = 0
+    for (const kw of kws) { let idx = t.indexOf(kw); while (idx >= 0) { hit++; idx = t.indexOf(kw, idx + 1) } }
+    if (hit > maxHit) { maxHit = hit; genre = g }
+  }
+  // 金手指
+  const fingers = FINGER_KEYWORDS.filter(kw => t.includes(kw))
+  const finger = fingers[0] || '未明显识别'
+  // 句子节奏统计
+  const sentences = t.split(/[。！？\n]/).filter(s => s.trim()).filter(s => s.length < 200)
+  const avgLen = sentences.length ? Math.round(sentences.reduce((a, s) => a + s.length, 0) / sentences.length) : 0
+  const shortRatio = sentences.length ? Math.round(sentences.filter(s => s.length <= 15).length / sentences.length * 100) : 0
+  // 章末钩子：取每章末尾短句（按「第X章」或空行粗切）
+  const chunks = t.split(/\n\s*第[一二三四五六七八九十百零\d]+章/).filter(s => s.trim())
+  const hooks = chunks.slice(0, 5).map(c => c.trim().slice(-30)).filter(s => s)
+  // 卖点关键词
+  const selling = []
+  if (finger !== '未明显识别') selling.push(`金手指「${finger}」带来的差异化爽点`)
+  if (/打脸|逆袭|震惊|不敢相信|倒吸一口凉气/.test(t)) selling.push('反差打脸爽点')
+  if (/重生|前世|上辈子/.test(t)) selling.push('重生预知信息差')
+  if (selling.length === 0) selling.push('需结合正文进一步提炼')
+  // 硬伤粗判
+  const flaws = []
+  if (avgLen > 60) flaws.push('长句偏多，节奏可能拖沓')
+  if (shortRatio < 15) flaws.push('短句占比低，对话感可能不足')
+  if (!fingers.length) flaws.push('前文未识别到明确金手指，开篇钩子可能偏弱')
+  if (len < 500) flaws.push('样本过短，分析仅供参考')
+  return {
+    genre,
+    subgenre: '需 AI 模式精确判断',
+    finger,
+    selling,
+    protagonist: { identity: '需 AI 模式分析', personality: '—', motive: '—', mark: '—' },
+    opening: len > 500 ? '本地模式仅做节奏统计，开篇结构分析请开启 AI 模式' : '样本过短',
+    pace: `平均句长 ${avgLen} 字，短句占比 ${shortRatio}%（${shortRatio >= 30 ? '节奏快/对话多' : shortRatio >= 15 ? '节奏适中' : '偏叙述，节奏可能偏慢'}）`,
+    hooks,
+    tropes: fingers.length ? [`${genre}常见套路：${fingers.slice(0, 3).join('、')}`] : ['需 AI 模式识别'],
+    takeaways: ['本地模式为粗分析，开启 AI 模式可获得深度拆解'],
+    flaws,
+    summary: `本地粗判：${genre}题材，金手指「${finger}」，${shortRatio >= 30 ? '快节奏' : '中慢节奏'}。开启 AI 模式可获完整拆书报告。`,
+  }
+}

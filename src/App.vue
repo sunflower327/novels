@@ -22,6 +22,7 @@ function toggleTheme() {
       <nav>
         <RouterLink to="/" aria-label="书架">书架</RouterLink>
         <RouterLink to="/writer" aria-label="创作">创作</RouterLink>
+        <RouterLink to="/teardown" aria-label="拆书">拆书</RouterLink>
         <RouterLink to="/kb" aria-label="知识库">知识库</RouterLink>
         <button class="btn sm ghost" @click="toggleTheme" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'">
           {{ theme === 'dark' ? '☀️' : '🌙' }}
