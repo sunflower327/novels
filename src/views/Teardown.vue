@@ -1,8 +1,11 @@
 <script setup>
 import { ref, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 import { notify } from '../toast.js'
 import { loadSettings, saveSettings, isConfigured, smartGenerate } from '../lib/ai.js'
+import { upsertBook, newBook, uid } from '../store.js'
 
+const router = useRouter()
 const ai = reactive(loadSettings())
 const input = ref('')
 const report = ref(null)
@@ -99,6 +102,41 @@ function copyReport() {
   if (!report.value) return
   navigator.clipboard?.writeText(JSON.stringify(report.value, null, 2)).then(() => notify('已复制报告'))
 }
+
+// 拆书报告 → 新建作品（作为创作模板）
+function reportToBook() {
+  if (!report.value) { notify('请先拆书'); return }
+  const r = report.value
+  const b = newBook()
+  b.title = `拆书模板·${r.genre || '未分类'}`
+  b.genre = r.genre || ''
+  b.synopsis = r.summary || ''
+  b.inspiration = `【拆书来源】${r.summary || ''}\n金手指：${r.finger || '无'}\n卖点：${(r.selling || []).join('；')}\n可借鉴：${(r.takeaways || []).join('；')}`
+  b.outline = {
+    main: r.opening ? `【开篇结构】${r.opening}\n【节奏】${r.pace || ''}\n【套路】${(r.tropes||[]).join('；')}` : '',
+    volumes: [],
+    chapters: [],
+  }
+  b.characters = []
+  if (r.protagonist && (r.protagonist.identity || r.protagonist.personality)) {
+    b.characters.push({
+      id: uid(),
+      name: '主角',
+      role: '主角',
+      identity: r.protagonist.identity || '',
+      personality: r.protagonist.personality || '',
+      ability: r.finger || '',
+      motive: r.protagonist.motive || '',
+      arc: '',
+      mark: r.protagonist.mark || '',
+      flaw: (r.flaws || []).join('；'),
+    })
+  }
+  b.relationships = ''
+  upsertBook(b)
+  notify('已创建新作品，跳转创作页')
+  router.push(`/writer/${b.id}`)
+}
 </script>
 
 <template>
@@ -128,7 +166,10 @@ function copyReport() {
   <div v-if="report" class="card mt">
     <div class="between">
       <h3 style="margin:0">拆书报告</h3>
-      <button class="btn sm ghost" @click="copyReport">复制 JSON</button>
+      <div class="row">
+        <button class="btn sm primary" @click="reportToBook">转为新作品 →</button>
+        <button class="btn sm ghost" @click="copyReport">复制 JSON</button>
+      </div>
     </div>
 
     <div class="grid cols-2 mt" style="gap:10px 18px">

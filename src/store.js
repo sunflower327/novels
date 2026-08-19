@@ -38,6 +38,12 @@ export function deleteBook(id) {
   saveBooks(loadBooks().filter((b) => b.id !== id))
 }
 
+// 计算单本书总字数（所有章节内容字数之和）
+export function bookWordCount(book) {
+  if (!book || !Array.isArray(book.chapters)) return 0
+  return book.chapters.reduce((sum, c) => sum + (c.content ? c.content.length : 0), 0)
+}
+
 export function newBook() {
   return {
     id: uid(),

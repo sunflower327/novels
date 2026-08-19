@@ -1,7 +1,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { getBook, upsertBook, newBook, uid } from '../store.js'
+import { getBook, upsertBook, newBook, uid, bookWordCount } from '../store.js'
 import { notify } from '../toast.js'
 import {
   GENRES, PLATFORMS, genInspiration, genTitles, genSynopsis, genOutline,
@@ -23,6 +23,7 @@ const steps = ['灵感', '书名', '简介', '总纲', '卷纲', '章纲', '角�
 const ai = reactive(loadSettings())
 const showAiSettings = ref(false)
 const busy = ref('')
+const goalWords = ref(Number(localStorage.getItem('novel:goal-words') || 200000))
 function persistAi() { saveSettings(ai) }
 function onProviderChange() {
   const p = providers.find(x => x.v === ai.provider)
@@ -103,6 +104,12 @@ function autosave() {
 }
 function saved(msg = '已保存') { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null } save(); notify(msg) }
 
+// 字数统计
+const writtenWords = computed(() => (s.written || '').length)
+const totalWords = computed(() => bookWordCount(book.value) + writtenWords.value)
+const progressPct = computed(() => Math.min(100, Math.round(totalWords.value / goalWords.value * 100)))
+function setGoal() { localStorage.setItem('novel:goal-words', String(goalWords.value)) }
+
 function copy(text, label = '已复制') {
   navigator.clipboard?.writeText(text).then(() => notify(label)).catch(() => {})
 }
@@ -154,8 +161,22 @@ async function doRel() {
 }
 // 续写
 async function doWrite() {
-  const r = await runAi('writing', '续写', s.prevText, s.chapSummary)
+  // 构建上下文：角色卡 + 总纲 + 前3章梗概，让 AI 续写更连贯
+  const ctx = {
+    outline: s.outline || '',
+    chars: s.chars || [],
+    prevChapters: (book.value.chapters || []).slice(-3),
+  }
+  const r = await runAi('writing', '续写', s.prevText, s.chapSummary, ctx)
   if (r) { s.written = r; notify('已生成续写草稿') }
+}
+// 章纲→续写联动：带入章纲梗概并跳转续写步骤
+function writeFromChapter(c) {
+  s.editId = ''
+  s.written = ''
+  s.chapSummary = `${c.title}：${c.summary || ''}${c.hook ? '（章末钩子：' + c.hook + '）' : ''}`
+  step.value = 8
+  notify('已带入章纲，点「续写」生成正文')
 }
 function saveChapter() {
   if (!s.written.trim()) return
@@ -318,7 +339,10 @@ function goHome() { save(); router.push('/') }
       <button class="btn primary" @click="doChapters">生成章纲</button>
       <div v-if="s.chapters.length" class="mt">
         <div v-for="(c, i) in s.chapters" :key="i" style="padding:8px 0;border-bottom:1px solid var(--border)">
-          <strong>{{ c.title }}</strong>
+          <div class="between">
+            <strong>{{ c.title }}</strong>
+            <button class="btn sm primary" @click="writeFromChapter(c)">续写此章 →</button>
+          </div>
           <div class="muted" style="font-size:13px">{{ c.summary }}</div>
           <div class="muted" style="font-size:13px">钩子：{{ c.hook }}</div>
         </div>
@@ -377,6 +401,15 @@ function goHome() { save(); router.push('/') }
       <button class="btn primary mt" @click="doWrite" :disabled="!!busy">{{ busy === '续写' ? '生成中…' : (aiEnabled() ? '🤖 AI 续写' : '生成续写草稿') }}</button>
       <label>续写结果（可编辑）</label>
       <textarea v-model="s.written" style="min-height:160px"></textarea>
+      <div class="word-stats mt">
+        <span class="muted" style="font-size:13px">本章 {{ writtenWords }} 字 · 累计 {{ totalWords }} 字</span>
+        <div class="progress-wrap">
+          <div class="progress-bar"><div class="progress-fill" :style="{ width: progressPct + '%' }"></div></div>
+          <span class="muted" style="font-size:12px">{{ progressPct }}% / 目标
+            <input type="number" v-model.number="goalWords" @change="setGoal" min="10000" max="5000000" style="width:80px;padding:1px 4px;font-size:12px"> 字
+          </span>
+        </div>
+      </div>
       <div class="row mt">
         <button class="btn primary" @click="saveChapter">{{ s.editId ? '保存修改' : '存为新章节' }}</button>
         <button v-if="s.editId" class="btn" @click="newChapter">取消编辑/新建</button>

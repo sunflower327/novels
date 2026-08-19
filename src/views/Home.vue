@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { loadBooks, deleteBook, exportAll, importAll } from '../store.js'
+import { loadBooks, deleteBook, exportAll, importAll, bookWordCount } from '../store.js'
 import { useRouter } from 'vue-router'
 import { notify } from '../toast.js'
 
@@ -97,7 +97,7 @@ function onImport(e) {
           <span class="tag">{{ b.platform }}</span>
         </div>
         <div class="muted" style="font-size:13px;margin-top:4px">
-          {{ b.genre || '未分类' }} · {{ b.status || '构思中' }} · {{ b.chapters?.length || 0 }} 章
+          {{ b.genre || '未分类' }} · {{ b.status || '构思中' }} · {{ b.chapters?.length || 0 }} 章 · {{ bookWordCount(b) }} 字
         </div>
         <p class="muted" style="font-size:13px;margin:8px 0 0" v-if="b.synopsis">
           {{ b.synopsis.slice(0, 60) }}{{ b.synopsis.length > 60 ? '…' : '' }}

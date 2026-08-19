@@ -191,11 +191,21 @@ export async function genRelationshipsAI(s, chars) {
   return await callChat(s, [{ role: 'user', content: prompt }])
 }
 
-// 9. 续写正文
-export async function continueWritingAI(s, prevText, chapterSummary) {
+// 9. 续写正文（支持完整上下文：角色卡/总纲/前章梗概，避免人设崩坏）
+export async function continueWritingAI(s, prevText, chapterSummary, ctx) {
+  const c = ctx || {}
+  const parts = []
+  if (c.outline) parts.push(`【总纲】${c.outline}`)
+  if (c.chars && c.chars.length) {
+    parts.push('【主要角色】' + c.chars.map(ch => `${ch.name}(${ch.role||'角色'}):${ch.personality||''},${ch.ability||''},${ch.mark||''}`).join('；'))
+  }
+  if (c.prevChapters && c.prevChapters.length) {
+    parts.push('【前文梗概】' + c.prevChapters.map((ch, i) => `第${i+1}章${ch.title?`《${ch.title}》`:''}：${(ch.content||'').slice(0,120).replace(/\n/g,' ')}`).join(' | '))
+  }
+  const context = parts.length ? `\n\n参考上下文（保持人设与剧情连贯，勿矛盾）：\n${parts.join('\n')}` : ''
   const prompt = `你是网文续写助手。根据本章梗概和前文，续写 400-800 字正文。
-要求：${platformHint(s.style)}；口语化、画面感、节奏明快；接续前文语气；章末留钩子。
-${prevText ? `前文末尾：...${prevText.slice(-200)}` : '（无前文，开篇）'}
+要求：${platformHint(s.style)}；口语化、画面感、节奏明快；接续前文语气；章末留钩子；保持角色人设与已有剧情一致。${context}
+${prevText ? `\n前文末尾：...${prevText.slice(-300)}` : '\n（无前文，开篇）'}
 本章梗概：${chapterSummary || '推进本章目标'}
 只输出正文，不要标题和解释。`
   return await callChat(s, [{ role: 'user', content: prompt }])

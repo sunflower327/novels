@@ -9,12 +9,31 @@ const book = ref(null)
 const chapterIdx = ref(0)
 const fontScale = ref(17)
 
+const PROGRESS_KEY = 'novel:reading-progress'
+
+function loadProgress(bookId) {
+  try {
+    const all = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}')
+    return typeof all[bookId] === 'number' ? all[bookId] : 0
+  } catch { return 0 }
+}
+function saveProgress(bookId, idx) {
+  try {
+    const all = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}')
+    all[bookId] = idx
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(all))
+  } catch {}
+}
+
 function load() {
   book.value = getBook(props.id)
-  chapterIdx.value = 0
+  const saved = loadProgress(props.id)
+  const max = (book.value?.chapters?.length || 1) - 1
+  chapterIdx.value = Math.max(0, Math.min(saved, max < 0 ? 0 : max))
 }
 onMounted(load)
 watch(() => props.id, load)
+watch(chapterIdx, (idx) => { if (props.id) saveProgress(props.id, idx) })
 
 const chapters = computed(() => book.value?.chapters || [])
 const current = computed(() => chapters.value[chapterIdx.value])
